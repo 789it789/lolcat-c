@@ -6,3 +6,4 @@ How to build:
 ``make``
 then:
 ``sudo make install``
+To uninstall: ``sudo make uninstall``
