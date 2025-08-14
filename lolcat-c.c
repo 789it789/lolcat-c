@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <math.h>
 
 #define NUM_COLORS 30
 
@@ -19,47 +18,34 @@ const char *colors[NUM_COLORS] = {
 
 const char *reset_color = "\033[0m";
 
-int utf8_charlen(unsigned char c) {
-    if ((c & 0x80) == 0x00) return 1;
-    else if ((c & 0xE0) == 0xC0) return 2;
-    else if ((c & 0xF0) == 0xE0) return 3;
-    else if ((c & 0xF8) == 0xF0) return 4;
+static inline int utf8_charlen(unsigned char c) {
+    if (c < 0x80) return 1;
+    if ((c & 0xE0) == 0xC0) return 2;
+    if ((c & 0xF0) == 0xE0) return 3;
+    if ((c & 0xF8) == 0xF0) return 4;
     return 1;
 }
 
-int is_ansi_escape_start(const unsigned char *p) {
-    return (*p == 0x1B && *(p + 1) == '[');
-}
-
-const unsigned char *skip_ansi_escape(const unsigned char *p) {
-    p += 2;
-    while (*p) {
-        if (*p >= 0x30 && *p <= 0x3F) {
-            p++;
-        } else {
-            if (*p >= 0x40 && *p <= 0x7E) {
-                p++;
-                break;
-            } else {
-                break;
-            }
-        }
-    }
+static inline const unsigned char *skip_ansi_escape(const unsigned char *p) {
+    p += 2; 
+    while (*p && !(*p >= 0x40 && *p <= 0x7E)) ++p;
+    if (*p) ++p;
     return p;
 }
 
 void print_colored_line_strip_esc(const char *line, float gradient, int line_offset) {
     const unsigned char *p = (const unsigned char *)line;
-    int char_index = 0;
+    size_t char_index = 0;
+    float base_offset = line_offset * gradient;
 
     while (*p) {
-        if (is_ansi_escape_start(p)) {
+        if (*p == 0x1B && *(p + 1) == '[') {
             p = skip_ansi_escape(p);
             continue;
         }
 
         int len = utf8_charlen(*p);
-        int color_index = (int)((char_index + line_offset) * gradient) % NUM_COLORS;
+        int color_index = (int)(base_offset + char_index * gradient) % NUM_COLORS;
         if (color_index < 0) color_index += NUM_COLORS;
 
         printf("%s", colors[color_index]);
@@ -79,7 +65,6 @@ void process_file(FILE *f, float gradient) {
 
     while (fgets(buffer, sizeof(buffer), f)) {
         buffer[strcspn(buffer, "\n")] = '\0';
-
         print_colored_line_strip_esc(buffer, gradient, line_offset + line_num);
         line_num++;
     }
@@ -89,28 +74,29 @@ int main(int argc, char *argv[]) {
     srand((unsigned int)time(NULL));
 
     float gradient = 0.6f;
-
     const char *filename = NULL;
 
     for (int i = 1; i < argc; ++i) {
         if (strncmp(argv[i], "-g=", 3) == 0) {
-            gradient = atof(argv[i] + 3);
-        } else {
+            gradient = (float)atof(argv[i] + 3);
+        }
+        else {
             filename = argv[i];
         }
     }
 
+    FILE *f = stdin;
     if (filename) {
-        FILE *f = fopen(filename, "r");
+        f = fopen(filename, "r");
         if (!f) {
             perror("Error opening file");
-            return 1;
+            return EXIT_FAILURE;
         }
-        process_file(f, gradient);
-        fclose(f);
-    } else {
-        process_file(stdin, gradient);
     }
 
-    return 0;
+    process_file(f, gradient);
+
+    if (f != stdin) fclose(f);
+
+    return EXIT_SUCCESS;
 }
